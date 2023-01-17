@@ -1,0 +1,31 @@
+[package]
+name = "tunnelbore_macros"
+version = "0.1.0"
+authors = ["Jan Beinke <git@janbeinke.com>"]
+edition = "2021"
+#license = "GPL-2.0 OR BSD-3-Clause"
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.13.0"
+blake2 = "0.10.4"
+lazy_static = "1.4.0"
+tokio = { version = "1", features = [ "full" ] }
+digest = {}
+tunnelbore = { path = "../tunnelbore" }
+syn = "1.0"
+quote = "1.0"
+#libbpf-rs = { git = "https://github.com/libbpf/libbpf-rs" }
+##libbpf-rs = "~0.18.1"
+#libc = "0.2"
+#structopt = "0.3"
+#ctrlc = "3.1"
+#plain = "0.2"
+
+[build-dependencies]
+#libbpf-cargo = { git = "https://github.com/libbpf/libbpf-rs" }
+#libbpf-cargo = "~0.12.1"
+
+[lib]
+name = "tunnelbore_macros"
+proc-macro = true
