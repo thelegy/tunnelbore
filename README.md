@@ -59,6 +59,17 @@ Theoretically we can compromise any connection using that key with it.
 Practically the key is only used to decrypt the `first message` for ingoing traffic to identify the origin peer of that message.
 We do forward the messages unaltered, so after the handshake everything is encrypted using ephemaral keys, that this software never had.
 
+## Roadmap
+- Implement a version without any nat punching, just redirection of traffic.
+For this version no introduction server is needed, which delays some decisions.
+Whenever we would usually collect candidate addresses of the peer and initiate ICE, simply re-resolve the hostname.
+This is resolves the problem, that WireGuard® usually will only resolve hostnames once, so roaming of the peer can only be detected, when the peer tries to send traffic to us.
+- Version 1:
+Add a single connection to some kind of introduction server and coordinate ICE through that.
+- Provisioning of WireGuard®, that does not rely on security of a single node.
+Maybe use a CA and certificates to establish trust in the configuration.
+- eBPF?
+
 ## Future expansion
 
 ### eBPF
