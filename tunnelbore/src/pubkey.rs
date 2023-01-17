@@ -1,8 +1,17 @@
+use crate::MAC1_HASHER;
+use anyhow::{anyhow, Result};
+use blake2::Blake2sMac;
+use blake2::Digest;
+use digest::FixedOutput;
+use digest::Update;
+
+type Blake2sMac128 = Blake2sMac<digest::consts::U16>;
 
 mod quote_helpers {
-    use crate::*;
     use proc_macro2::{Delimiter, Group, Punct, Spacing, TokenStream};
     use quote::{quote, ToTokens, TokenStreamExt};
+
+    use super::Pubkey;
 
     fn array_literal<T: quote::ToTokens, const N: usize>(x: &[T; N]) -> Group {
         let mut tokens = TokenStream::new();
@@ -20,16 +29,14 @@ mod quote_helpers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pubkey {
     key: [u8; 32],
     mac1_hash: [u8; 32],
-    recent_sessions: Mutex<VecDeque<Arc<Mutex<Session>>>>,
 }
 impl Pubkey {
     pub const fn from_raw(key: [u8; 32], mac1_hash: [u8; 32]) -> Pubkey {
-        let recent_sessions = Default::default();
-        Pubkey { key, mac1_hash, recent_sessions }
+        Pubkey { key, mac1_hash }
     }
     pub fn verify_mac1(&self, mac1: &[u8; 16], x: &[u8]) -> Result<bool> {
         let blake = Blake2sMac128::new_with_salt_and_personal(&self.mac1_hash[..], &[], &[])?;
@@ -47,7 +54,7 @@ impl std::fmt::Display for Pubkey {
 impl From<[u8; 32]> for Pubkey {
     fn from(key: [u8; 32]) -> Self {
         let mac1_hash = MAC1_HASHER.clone().chain_update(key).finalize().into();
-        Pubkey { key, mac1_hash }
+        Pubkey::from_raw(key, mac1_hash)
     }
 }
 impl TryFrom<Vec<u8>> for Pubkey {
@@ -65,5 +72,3 @@ impl TryFrom<&str> for Pubkey {
         Pubkey::try_from(base64::decode(key)?)
     }
 }
-
-

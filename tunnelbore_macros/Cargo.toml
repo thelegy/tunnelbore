@@ -15,6 +15,7 @@ digest = {}
 tunnelbore = { path = "../tunnelbore" }
 syn = "1.0"
 quote = "1.0"
+proc-macro2 = "1.0"
 #libbpf-rs = { git = "https://github.com/libbpf/libbpf-rs" }
 ##libbpf-rs = "~0.18.1"
 #libc = "0.2"

@@ -3,17 +3,24 @@ name = "tunnelbore"
 version = "0.1.0"
 authors = ["Jan Beinke <git@janbeinke.com>"]
 edition = "2021"
-#license = "GPL-2.0 OR BSD-3-Clause"
+#license = "GPL-3.0 OR BSD-3-Clause"
 
 [dependencies]
 anyhow = "1.0"
+async-trait = "0.1.57"
 base64 = "0.13.0"
 blake2 = "0.10.4"
-lazy_static = "1.4.0"
-tokio = { version = "1", features = [ "full" ] }
 digest = {}
-quote = "1.0"
+hashbrown = "0.12"
+lazy_static = "1.4.0"
 proc-macro2 = {}
+quote = "1.0"
+rand = "0.8.5"
+snow = "0.9.0"
+tai64 = "4.0.0"
+thiserror = "1.0"
+tokio = { version = "1", features = [ "full" ] }
+void = "1"
 #libbpf-rs = { git = "https://github.com/libbpf/libbpf-rs" }
 ##libbpf-rs = "~0.18.1"
 #libc = "0.2"
@@ -33,3 +40,6 @@ name = "tunnelbore"
 
 [[example]]
 name = "tunnelbore"
+
+[[example]]
+name = "tunnelbore-server"

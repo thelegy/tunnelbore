@@ -1,5 +1,11 @@
 use anyhow::{anyhow, Result};
 use blake2::{Blake2s256, Digest};
+use hashbrown::HashMap;
+use std::hash::Hash;
+use std::sync::RwLock;
+
+#[macro_use]
+mod opaque;
 
 #[macro_use]
 extern crate lazy_static;
@@ -8,57 +14,92 @@ lazy_static! {
     pub static ref MAC1_HASHER: Blake2s256 = Blake2s256::new_with_prefix(b"mac1----");
 }
 
-mod quote_helpers {
-    use crate::*;
-    use proc_macro2::{Delimiter, Group, Punct, Spacing, TokenStream};
-    use quote::{quote, ToTokens, TokenStreamExt};
+pub mod protocol;
+pub mod pubkey;
+pub mod session;
 
-    fn array_literal<T: quote::ToTokens, const N: usize>(x: &[T; N]) -> Group {
-        let mut tokens = TokenStream::new();
-        tokens.append_separated(x.iter(), Punct::new(',', Spacing::Alone));
-        Group::new(Delimiter::Bracket, tokens)
+pub use pubkey::Pubkey;
+
+pub trait LockResultExt {
+    type Guard;
+    fn unpoisoned(self) -> Result<Self::Guard>;
+}
+impl<Guard> LockResultExt for std::sync::LockResult<Guard> {
+    type Guard = Guard;
+    fn unpoisoned(self) -> Result<Self::Guard> {
+        self.map_err(|_| anyhow!("PoisonError"))
     }
-    impl ToTokens for Pubkey {
-        fn to_tokens(&self, tokens: &mut TokenStream) {
-            let key = self.key;
-            let key = array_literal(&key);
-            let mac1_hash = self.mac1_hash;
-            let mac1_hash = array_literal(&mac1_hash);
-            tokens.extend(quote!(tunnelbore::Pubkey{key: #key, mac1_hash: #mac1_hash}));
+}
+
+pub trait FromKey<K> {
+    fn from_key(key: &K) -> Self;
+}
+impl<K, T> FromKey<K> for std::sync::Arc<T>
+where
+    T: FromKey<K>,
+{
+    fn from_key(key: &K) -> Self {
+        std::sync::Arc::new(T::from_key(key))
+    }
+}
+impl<K, T> FromKey<K> for std::sync::Mutex<T>
+where
+    T: FromKey<K>,
+{
+    fn from_key(key: &K) -> Self {
+        std::sync::Mutex::new(T::from_key(key))
+    }
+}
+
+pub struct LockedHashMap<K, V>(RwLock<HashMap<K, V>>);
+
+impl<K, V> LockedHashMap<K, V> {
+    pub fn new() -> Self {
+        LockedHashMap(Default::default())
+    }
+    pub fn read(&self) -> Result<std::sync::RwLockReadGuard<'_, HashMap<K, V>>> {
+        self.0.read().unpoisoned()
+    }
+    pub fn write(&self) -> Result<std::sync::RwLockWriteGuard<'_, HashMap<K, V>>> {
+        self.0.write().unpoisoned()
+    }
+}
+impl<K, V> LockedHashMap<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Clone,
+{
+    pub fn get_or<F>(&self, k: &K, f: F) -> Result<V>
+    where
+        F: FnOnce(&K) -> V,
+    {
+        if let Some(x) = self.read()?.get(k) {
+            return Ok(x.clone());
         }
+        let mut lock = self.write()?;
+        Ok(lock.entry(k.clone()).or_insert_with(|| f(k)).clone())
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Pubkey {
-    pub key: [u8; 32],
-    pub mac1_hash: [u8; 32],
-}
-
-impl std::fmt::Display for Pubkey {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        formatter.write_str(&base64::encode(self.key))
+impl<K, V> Default for LockedHashMap<K, V> {
+    fn default() -> Self {
+        LockedHashMap::new()
     }
 }
-
-impl From<[u8; 32]> for Pubkey {
-    fn from(key: [u8; 32]) -> Self {
-        let mac1_hash = MAC1_HASHER.clone().chain_update(key).finalize().into();
-        Pubkey { key, mac1_hash }
+impl<K, V> LockedHashMap<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Default + Clone,
+{
+    pub fn get_or_default(&self, k: &K) -> Result<V> {
+        self.get_or(k, |_| Default::default())
     }
 }
-impl TryFrom<Vec<u8>> for Pubkey {
-    type Error = anyhow::Error;
-    fn try_from(key: Vec<u8>) -> Result<Self, Self::Error> {
-        match <[u8; 32]>::try_from(key) {
-            Ok(array) => Ok(array.into()),
-            _ => Err(anyhow!("Length mismatch")),
-        }
-    }
-}
-impl TryFrom<&str> for Pubkey {
-    type Error = anyhow::Error;
-    fn try_from(key: &str) -> Result<Self, Self::Error> {
-        Pubkey::try_from(base64::decode(key)?)
+impl<K, V> LockedHashMap<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: FromKey<K> + Clone,
+{
+    pub fn get_or_new(&self, k: &K) -> Result<V> {
+        self.get_or(k, V::from_key)
     }
 }
