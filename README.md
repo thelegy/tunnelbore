@@ -76,3 +76,18 @@ Maybe use a CA and certificates to establish trust in the configuration.
 It should be possible to only forward the handshake messages through user space and configure some BPF maps.
 All data traffic could then be forwarded in the kernel using eBPF.
 The best thing about is, is that the userspace implementation can stay in place, it will simply see no traffic with this change.
+
+## Alternative Ideas
+
+### Can't we identify inmound connections without knowledge of the private key?
+Ideed this should be possible but has some caveat.
+For incoming traffic we could generate a new local ip/port pair, and store that with the peers remote ip/port and forwar the message.
+When we receive the `second message` back on the local ip/port pair we know where to route the answer.
+Notice that, at no point we did identify the pubkey of the sender, so we know its remote ip/port, but nothing to identify is uniquely.
+This means, that after the peer roams to a differen ip/port pair, we cannot link the new connection to the old one.
+Thus we cannot distinguish, which local ip/port pairs can be destroyed, because they have been replaced, and which ones just don't see any traffic, but are still required.
+To solve this, we could query the WireGuard® tooling to guess, which local sockets are still required.
+
+Maybe this is not needed anymore, when we have the introduction server, as we can simply assume, that we can identify the sender with the help of the introduction server.
+
+We could also modify the handshake packets to include the missing information, but that would have security implications.
