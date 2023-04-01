@@ -38,8 +38,8 @@
 
     devShells = wat.lib.withPkgsForLinux nixpkgs [self.overlays.default fenix.overlay] (pkgs: rec {
       tunnelbore = pkgs.mkShell {
-        inputsFrom = [ pkgs.tunnelbore_nightly ];
-        packages = [ pkgs.rust_toolchain_nightly.rust-analyzer pkgs.rustfmt ];
+        inputsFrom = [ pkgs.tunnelbore ];
+        packages = [ pkgs.rust-analyzer pkgs.rustfmt ];
       };
       default = tunnelbore;
     });

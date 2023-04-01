@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1.57"
-base64 = "0.13.0"
-blake2 = "0.10.4"
-digest = {}
-hashbrown = "0.12"
+base64 = "0.21.0"
+blake2 = "0.10.6"
+digest = "0.10.6"
+hashbrown = "0.13"
 lazy_static = "1.4.0"
 proc-macro2 = {}
 quote = "1.0"
