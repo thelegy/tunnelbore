@@ -1,11 +1,15 @@
 use crate::MAC1_HASHER;
 use anyhow::{anyhow, Result};
+use base64::Engine;
 use blake2::Blake2sMac;
 use blake2::Digest;
 use digest::FixedOutput;
 use digest::Update;
+use serde::{Deserialize, Serialize};
 
 type Blake2sMac128 = Blake2sMac<digest::consts::U16>;
+
+const BASE64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
 mod quote_helpers {
     use proc_macro2::{Delimiter, Group, Punct, Spacing, TokenStream};
@@ -47,7 +51,7 @@ impl Pubkey {
 
 impl std::fmt::Display for Pubkey {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        formatter.write_str(&base64::encode(self.key))
+        formatter.write_str(&String::from(self))
     }
 }
 
@@ -69,6 +73,42 @@ impl TryFrom<Vec<u8>> for Pubkey {
 impl TryFrom<&str> for Pubkey {
     type Error = anyhow::Error;
     fn try_from(key: &str) -> Result<Self, Self::Error> {
-        Pubkey::try_from(base64::decode(key)?)
+        Pubkey::try_from(&String::from(key))
+    }
+}
+impl TryFrom<&String> for Pubkey {
+    type Error = anyhow::Error;
+    fn try_from(key: &String) -> Result<Self, Self::Error> {
+        Pubkey::try_from(BASE64.decode(key)?)
+    }
+}
+
+impl From<&Pubkey> for [u8; 32] {
+    fn from(key: &Pubkey) -> [u8; 32] {
+        key.key
+    }
+}
+impl From<&Pubkey> for String {
+    fn from(key: &Pubkey) -> String {
+        BASE64.encode(key.key)
+    }
+}
+
+impl<'de> Deserialize<'de> for Pubkey {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let key = String::deserialize(deserializer)?;
+        Pubkey::try_from(&key).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for Pubkey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        String::from(self).serialize(serializer)
     }
 }

@@ -33,8 +33,16 @@ impl std::fmt::Display for SessionId {
 
 #[derive(Debug)]
 pub struct SessionManager<S: 'static + Sync + Send = DefaultHashBuilder> {
-    local_ids: RwLock<HashMap<SessionId, Weak<Mutex<Session>>, S>>,
-    remote_ids: RwLock<HashMap<SessionId, Weak<Mutex<Session>>, S>>,
+    local_ids: Arc<RwLock<HashMap<SessionId, Weak<Mutex<Session>>, S>>>,
+    remote_ids: Arc<RwLock<HashMap<SessionId, Weak<Mutex<Session>>, S>>>,
+}
+
+impl<S: Sync + Send + BuildHasher> Clone for SessionManager<S> {
+    fn clone(&self) -> Self {
+        let local_ids = self.local_ids.clone();
+        let remote_ids = self.local_ids.clone();
+        Self { local_ids, remote_ids }
+    }
 }
 
 impl<S: Default + Sync + Send + BuildHasher> SessionManager<S> {
@@ -43,9 +51,9 @@ impl<S: Default + Sync + Send + BuildHasher> SessionManager<S> {
     }
 }
 impl<S: Sync + Send + BuildHasher> SessionManager<S> {
-    pub const fn with_hashers(hash_builder1: S, hash_builder2: S) -> Self {
-        let local_ids = RwLock::new(HashMap::with_hasher(hash_builder1));
-        let remote_ids = RwLock::new(HashMap::with_hasher(hash_builder2));
+    pub fn with_hashers(hash_builder1: S, hash_builder2: S) -> Self {
+        let local_ids = Arc::new(RwLock::new(HashMap::with_hasher(hash_builder1)));
+        let remote_ids = Arc::new(RwLock::new(HashMap::with_hasher(hash_builder2)));
         Self {
             local_ids,
             remote_ids,
@@ -61,14 +69,15 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         Arc::new(Mutex::new(session))
     }
     fn add_local_id(
-        &'static self,
+        &self,
         session: &mut Session,
         s: &Arc<Mutex<Session>>,
         id: SessionId,
     ) -> Result<()> {
-        session.drop_actions.push(opaque!(|session| {
+        let sm = self.clone();
+        session.drop_actions.push(opaque!(move| session| {
             if let Some(id) = &session.local_id {
-                if let Ok(mut ids) = self.local_ids.write() {
+                if let Ok(mut ids) = sm.local_ids.write() {
                     ids.remove(id);
                 }
             }
@@ -81,14 +90,15 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         Ok(())
     }
     fn add_remote_id(
-        &'static self,
+        &self,
         session: &mut Session,
         s: &Arc<Mutex<Session>>,
         id: SessionId,
     ) -> Result<()> {
-        session.drop_actions.push(opaque!(|session| {
+        let sm = self.clone();
+        session.drop_actions.push(opaque!(move |session| {
             if let Some(id) = &session.remote_id {
-                if let Ok(mut ids) = self.remote_ids.write() {
+                if let Ok(mut ids) = sm.remote_ids.write() {
                     ids.remove(id);
                 }
             }
@@ -108,7 +118,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         let remote_ids = self.remote_ids.read().unpoisoned()?;
         Ok(remote_ids.get(id).and_then(Weak::upgrade))
     }
-    pub fn new_outbound_session(&'static self, id: SessionId, pubkey: &Pubkey) -> Result<Arc<Mutex<Session>>> {
+    pub fn new_outbound_session(&self, id: SessionId, pubkey: &Pubkey) -> Result<Arc<Mutex<Session>>> {
         let s = self.new_session();
         let mut session = s.lock().unpoisoned()?;
         self.add_local_id(&mut session, &s, id)?;
@@ -117,7 +127,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         Ok(s)
     }
     pub fn new_inbound_response(
-        &'static self,
+        &self,
         s: &Arc<Mutex<Session>>,
         id: SessionId,
     ) -> Result<()> {

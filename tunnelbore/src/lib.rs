@@ -14,10 +14,12 @@ lazy_static! {
     pub static ref MAC1_HASHER: Blake2s256 = Blake2s256::new_with_prefix(b"mac1----");
 }
 
+pub mod config;
 pub mod protocol;
 pub mod pubkey;
 pub mod session;
 
+pub use config::Config;
 pub use pubkey::Pubkey;
 
 pub trait LockResultExt {
@@ -51,6 +53,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct LockedHashMap<K, V>(RwLock<HashMap<K, V>>);
 
 impl<K, V> LockedHashMap<K, V> {
