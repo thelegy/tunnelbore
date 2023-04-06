@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tunnelbore::protocol::server::Server;
 use tunnelbore_macros::*;
 

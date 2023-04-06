@@ -76,7 +76,7 @@ impl PeerInfo {
 }
 
 #[derive(Debug, Clone)]
-struct Core {
+pub struct Core {
     pub cfg: Config,
     pub local_address: SocketAddr,
     addresses: Arc<RwLock<HashMap<Pubkey, SocketAddr>>>,
@@ -89,13 +89,13 @@ struct Core {
 }
 
 impl Core {
-    async fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         use figment::providers::Format;
         let provider = Config::figment().merge(figment::providers::Toml::file("config.toml"));
         Self::custom(provider).await
     }
 
-    async fn custom<T: Provider>(provider: T) -> Result<Self> {
+    pub async fn custom<T: Provider>(provider: T) -> Result<Self> {
         let figment = figment::Figment::from(provider);
         let cfg = Config::from(&figment)?;
         let local_socket = Arc::new(UdpSocket::bind_sync("::1:2222")?);
@@ -140,7 +140,7 @@ impl Core {
         })
     }
 
-    async fn run(&self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         try_join!(
             self.clone().local_listen_loop(),
             self.clone().remote_listen_loop()
