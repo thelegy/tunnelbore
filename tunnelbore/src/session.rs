@@ -1,6 +1,7 @@
 //use crate::LockResultExt;
-use crate::{opaque::*, LockResultExt, Pubkey};
+use crate::{fmt_option_display, LockResultExt, Pubkey};
 use anyhow::{anyhow, Result};
+use derive_debug::Dbg;
 use hashbrown::{hash_map::DefaultHashBuilder, HashMap};
 use std::hash::{BuildHasher, Hash};
 use std::net::SocketAddr;
@@ -61,7 +62,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
     }
     fn new_session(&self) -> Arc<Mutex<Session>> {
         let session = Session {
-            drop_actions: vec![opaque!(|s| println!("Dropping {:x?}", s))],
+            drop_actions: vec![Box::new(|s| println!("Dropping {:x?}", s))],
             pubkey: None,
             local_id: None,
             remote_id: None,
@@ -75,7 +76,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         id: SessionId,
     ) -> Result<()> {
         let sm = self.clone();
-        session.drop_actions.push(opaque!(move| session| {
+        session.drop_actions.push(Box::new(move| session| {
             if let Some(id) = &session.local_id {
                 if let Ok(mut ids) = sm.local_ids.write() {
                     ids.remove(id);
@@ -96,7 +97,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         id: SessionId,
     ) -> Result<()> {
         let sm = self.clone();
-        session.drop_actions.push(opaque!(move |session| {
+        session.drop_actions.push(Box::new(move |session| {
             if let Some(id) = &session.remote_id {
                 if let Ok(mut ids) = sm.remote_ids.write() {
                     ids.remove(id);
@@ -142,11 +143,15 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Dbg)]
 pub struct Session {
-    drop_actions: Vec<Opaque<dyn FnOnce(&mut Session) + Sync + Send>>,
+    #[dbg(placeholder = "...")]
+    drop_actions: Vec<Box<dyn FnOnce(&mut Session) + Sync + Send>>,
+    #[dbg(formatter = "fmt_option_display")]
     pubkey: Option<Pubkey>,
+    #[dbg(formatter = "fmt_option_display")]
     local_id: Option<SessionId>,
+    #[dbg(formatter = "fmt_option_display")]
     remote_id: Option<SessionId>,
 }
 impl Session {
@@ -164,7 +169,7 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         for action in std::mem::take(&mut self.drop_actions).drain(..) {
-            (action.val)(self)
+            action(self)
         }
     }
 }

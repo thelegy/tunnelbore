@@ -5,9 +5,6 @@ use std::hash::Hash;
 use std::sync::RwLock;
 
 #[macro_use]
-mod opaque;
-
-#[macro_use]
 extern crate lazy_static;
 
 lazy_static! {
@@ -21,6 +18,13 @@ pub mod session;
 
 pub use config::Config;
 pub use pubkey::Pubkey;
+
+pub fn fmt_option_display<T: std::fmt::Display>(opt: &Option<T>) -> String {
+    match opt {
+        Some(val) => std::format!("Some({})", val),
+        None => "None".into(),
+    }
+}
 
 pub trait LockResultExt {
     type Guard;

@@ -221,13 +221,13 @@ impl Core {
             // TODO verify the sender
             self.sessions.new_inbound_response(&session, id_sender)?;
             if let Some(pubkey) = session.lock().unpoisoned()?.pubkey() {
-                println!("Found pubkey: {:x?}", pubkey);
+                println!("Found pubkey: {}", pubkey);
                 let peer = self.peers.get_or_new(&pubkey)?;
-                println!("Peer: {:x?}", peer);
+                // println!("Peer: {:x?}", peer);
                 //let mut peer = peer.lock().unpoisoned()?;
                 //println!("Lookup result: {:x?}", peer);
                 let sock = PeerInfo::socket(self, peer).await?;
-                println!("Lookup socket: {:x?}", sock);
+                // println!("Lookup socket: {:?}", *sock);
                 send_bytes(&sock, &msg, &id_receiver.address()).await
             } else {
                 Ok(())
@@ -238,6 +238,7 @@ impl Core {
     }
 
     async fn handle_inbound_data(&self, msg: &[u8], _from: &SocketAddr) -> Result<()> {
+        println!("handle_inbound_data");
         if msg.len() < 32 {
             return Err(anyhow!("Too small for a valid wg data packet"));
         };
@@ -247,11 +248,11 @@ impl Core {
         );
         if let Some(session) = self.sessions.find_session_by_local_id(&id_receiver)? {
             if let Some(pubkey) = session.lock().unpoisoned()?.pubkey() {
-                println!("Found pubkey: {:x?}", pubkey);
+                println!("Found pubkey: {}", pubkey);
                 let peer = self.peers.get_or_new(&pubkey)?;
-                println!("Peer: {:x?}", peer);
+                // println!("Peer: {:x?}", peer);
                 let sock = PeerInfo::socket(self, peer).await?;
-                println!("Lookup socket: {:x?}", sock);
+                // println!("Lookup socket: {:?}", sock.local_addr()?);
                 send_bytes(&sock, &msg, &id_receiver.address()).await
             } else {
                 Ok(())
@@ -297,6 +298,7 @@ impl Core {
         pubkey: &Pubkey,
         sock: &UdpSocket,
     ) -> Result<()> {
+        println!("handle_outbound_data");
         match self.addresses.read().await.get(pubkey) {
             Some(addr) => send_bytes(sock, buf, addr).await,
             None => Err(anyhow!("No target address was found")),
