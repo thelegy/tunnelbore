@@ -14,12 +14,12 @@ use tunnelbore::*;
 
 #[derive(Debug)]
 struct PeerInfo {
-    socket: Option<Weak<UdpSocket>>,
+    socket: Weak<UdpSocket>,
     pubkey: Pubkey,
 }
 impl FromKey<Pubkey> for PeerInfo {
     fn from_key(key: &Pubkey) -> Self {
-        PeerInfo {
+        Self {
             socket: Default::default(),
             pubkey: key.clone(),
         }
@@ -28,13 +28,13 @@ impl FromKey<Pubkey> for PeerInfo {
 impl PeerInfo {
     pub async fn socket(core: &Core, p: Arc<Mutex<Self>>) -> Result<Arc<UdpSocket>> {
         let mut peer = p.lock().unpoisoned()?;
-        if let Some(sock) = peer.socket.as_ref().and_then(Weak::upgrade) {
+        if let Some(sock) = peer.socket.upgrade() {
             Ok(sock)
         } else {
             let ip = 0x7f000000 | thread_rng().gen_range(2..0xffffff);
             let addr = SocketAddr::new(std::net::Ipv4Addr::from(ip).into(), 0);
             let socket = Arc::new(UdpSocket::bind_sync(addr)?);
-            peer.socket = Some(Arc::downgrade(&socket));
+            peer.socket = Arc::downgrade(&socket);
             spawn(Self::run(core.clone(), p.clone(), socket.clone()));
             Ok(socket)
         }
