@@ -1,27 +1,28 @@
+use crate::session::*;
+use crate::LockResultExt;
 use anyhow::{anyhow, Result};
 use figment::Provider;
+use hashbrown::HashMap;
 use rand::{thread_rng, Rng};
-use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::{Mutex, Weak};
 use std::vec::Vec;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tokio::{spawn, try_join};
-
-use tunnelbore::session::*;
 use tunnelbore::*;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct PeerInfo {
     socket: Weak<UdpSocket>,
-    pubkey: Pubkey,
+    pubkey: Option<Pubkey>,
 }
 impl FromKey<Pubkey> for PeerInfo {
     fn from_key(key: &Pubkey) -> Self {
         Self {
             socket: Default::default(),
-            pubkey: key.clone(),
+            pubkey: Some(key.clone()),
         }
     }
 }
@@ -39,7 +40,7 @@ impl PeerInfo {
             Ok(socket)
         }
     }
-    fn pubkey(&self) -> &Pubkey {
+    fn pubkey(&self) -> &Option<Pubkey> {
         &self.pubkey
     }
     async fn run(core: Core, p: Arc<Mutex<Self>>, sock: Arc<UdpSocket>) -> Result<()> {
@@ -60,8 +61,13 @@ impl PeerInfo {
                     3 => Err(anyhow!("Not implemented yet (outbound cookie)")),
                     //4 => Err(anyhow!("Not implemented yet (outbound data)")),
                     4 => {
-                        core.handle_outbound_data(&buf[..], &addr, &pubkey, &core.remote_socket)
-                            .await
+                        core.handle_outbound_data(
+                            &buf[..],
+                            &addr,
+                            &pubkey.ok_or(anyhow!("No pubkey"))?,
+                            &core.remote_socket,
+                        )
+                        .await
                     }
                     _ => Err(anyhow!(
                         "Unhandled message from \"{}\": {:x?}",
@@ -142,14 +148,14 @@ impl Core {
 
     pub async fn run(&self) -> Result<()> {
         try_join!(
-            self.clone().local_listen_loop(),
-            self.clone().remote_listen_loop()
+            self.clone().local_sock_listen_loop(),
+            self.clone().remote_sock_listen_loop()
         )?;
 
         Ok(())
     }
 
-    async fn local_listen_loop(self) -> Result<()> {
+    async fn local_sock_listen_loop(self) -> Result<()> {
         loop {
             let mut buf = vec![0u8; 1500];
             let (len, addr) = self.local_socket.recv_from(&mut buf).await?;
@@ -178,10 +184,9 @@ impl Core {
         }
     }
 
-    async fn remote_listen_loop(self) -> Result<()> {
+    async fn remote_sock_listen_loop(self) -> Result<()> {
         loop {
             let mut buf = vec![0u8; 1500];
-            // TODO: smtg is broken here... recv_from never finishes
             let (len, addr) = self.remote_socket.recv_from(&mut buf).await?;
             buf.resize(len, 0);
             println!(
@@ -191,7 +196,10 @@ impl Core {
                 self.remote_socket.local_addr()?
             );
             match buf[0] {
-                1 => Err(anyhow!("Not implemented yet (inbound first)")),
+                1 => {
+                    self.remote_sock_handle_first(vec_to_array(buf)?, &addr)
+                        .await
+                }
                 2 => self.handle_inbound_second(vec_to_array(buf)?, &addr).await,
                 3 => Err(anyhow!("Not implemented yet (inbound cookie)")),
                 //4 => Err(anyhow!("Not implemented yet (inbound data)")),
@@ -205,6 +213,17 @@ impl Core {
             }
             .unwrap_or_else(|err| println!("[Err]: {}", err))
         }
+    }
+
+    async fn remote_sock_handle_first(&self, msg: [u8; 148], from: &SocketAddr) -> Result<()> {
+        let mac1 = msg.subarray(116);
+        println!(
+            "Inbound first from {} with mac1 {}",
+            from,
+            mac1.map(|x| format!("{:02x}", x)).concat()
+        );
+        if self.cfg.own_pubkey.verify_mac1(mac1, &msg[0..116])? {}
+        Ok(())
     }
 
     async fn handle_inbound_second(&self, msg: [u8; 92], from: &SocketAddr) -> Result<()> {
