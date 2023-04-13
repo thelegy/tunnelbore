@@ -12,6 +12,7 @@ lazy_static! {
 }
 
 pub mod config;
+pub mod drophook;
 pub mod protocol;
 pub mod pubkey;
 pub mod session;
