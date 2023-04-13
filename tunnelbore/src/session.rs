@@ -1,4 +1,4 @@
-//use crate::LockResultExt;
+use crate::drophook::{AttachDropHook, DropHooks};
 use crate::{fmt_option_display, LockResultExt, Pubkey};
 use anyhow::{anyhow, Result};
 use derive_debug::Dbg;
@@ -33,7 +33,7 @@ impl std::fmt::Display for SessionId {
 }
 
 #[derive(Debug)]
-pub struct SessionManager<S: 'static + Sync + Send = DefaultHashBuilder> {
+pub struct SessionManager<S: 'static + BuildHasher + Sync + Send = DefaultHashBuilder> {
     local_ids: Arc<RwLock<HashMap<SessionId, Weak<Mutex<Session>>, S>>>,
     remote_ids: Arc<RwLock<HashMap<SessionId, Weak<Mutex<Session>>, S>>>,
 }
@@ -42,7 +42,10 @@ impl<S: Sync + Send + BuildHasher> Clone for SessionManager<S> {
     fn clone(&self) -> Self {
         let local_ids = self.local_ids.clone();
         let remote_ids = self.local_ids.clone();
-        Self { local_ids, remote_ids }
+        Self {
+            local_ids,
+            remote_ids,
+        }
     }
 }
 
@@ -62,11 +65,12 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
     }
     fn new_session(&self) -> Arc<Mutex<Session>> {
         let session = Session {
-            drop_actions: vec![Box::new(|s| println!("Dropping {:x?}", s))],
-            pubkey: None,
-            local_id: None,
-            remote_id: None,
-        };
+                drop_hooks: Default::default(),
+                pubkey: None,
+                local_id: None,
+                remote_id: None,
+            };
+        session.attach_drop_hook(Box::new(move |s| println!("Dropping {:x?}", s)));
         Arc::new(Mutex::new(session))
     }
     fn add_local_id(
@@ -76,7 +80,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         id: SessionId,
     ) -> Result<()> {
         let sm = self.clone();
-        session.drop_actions.push(Box::new(move| session| {
+        session.attach_drop_hook(Box::new(move |session| {
             if let Some(id) = &session.local_id {
                 if let Ok(mut ids) = sm.local_ids.write() {
                     ids.remove(id);
@@ -97,7 +101,8 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         id: SessionId,
     ) -> Result<()> {
         let sm = self.clone();
-        session.drop_actions.push(Box::new(move |session| {
+        let remote_id = session.remote_id.clone();
+        session.attach_drop_hook(Box::new(move |session| {
             if let Some(id) = &session.remote_id {
                 if let Ok(mut ids) = sm.remote_ids.write() {
                     ids.remove(id);
@@ -119,7 +124,11 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         let remote_ids = self.remote_ids.read().unpoisoned()?;
         Ok(remote_ids.get(id).and_then(Weak::upgrade))
     }
-    pub fn new_outbound_session(&self, id: SessionId, pubkey: &Pubkey) -> Result<Arc<Mutex<Session>>> {
+    pub fn new_outbound_session(
+        &self,
+        id: SessionId,
+        pubkey: &Pubkey,
+    ) -> Result<Arc<Mutex<Session>>> {
         let s = self.new_session();
         let mut session = s.lock().unpoisoned()?;
         self.add_local_id(&mut session, &s, id)?;
@@ -127,11 +136,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
         drop(session);
         Ok(s)
     }
-    pub fn new_inbound_response(
-        &self,
-        s: &Arc<Mutex<Session>>,
-        id: SessionId,
-    ) -> Result<()> {
+    pub fn new_inbound_response(&self, s: &Arc<Mutex<Session>>, id: SessionId) -> Result<()> {
         let mut session = s.lock().unpoisoned()?;
         if let Some(orig_id) = &session.remote_id {
             return Err(anyhow!(
@@ -146,7 +151,7 @@ impl<S: Sync + Send + BuildHasher> SessionManager<S> {
 #[derive(Dbg)]
 pub struct Session {
     #[dbg(placeholder = "...")]
-    drop_actions: Vec<Box<dyn FnOnce(&mut Session) + Sync + Send>>,
+    drop_hooks: DropHooks<Session>,
     #[dbg(formatter = "fmt_option_display")]
     pubkey: Option<Pubkey>,
     #[dbg(formatter = "fmt_option_display")]
@@ -166,11 +171,15 @@ impl Session {
         self.pubkey.as_ref()
     }
 }
+impl AttachDropHook<Session> for Session {
+    fn attach_drop_hook(&self, action: Box<dyn FnOnce(&mut Session) + Send + Sync>) {
+        self.drop_hooks.attach_drop_hook(action)
+    }
+}
 impl Drop for Session {
     fn drop(&mut self) {
-        for action in std::mem::take(&mut self.drop_actions).drain(..) {
-            action(self)
-        }
+        let drop_hooks = self.drop_hooks.clone();
+        drop_hooks.call(self)
     }
 }
 
